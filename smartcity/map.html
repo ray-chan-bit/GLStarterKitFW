@@ -1,0 +1,82 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Smart City Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html,body,#map{height:100%;margin:0}
+  #status{position:absolute;top:10px;left:60px;z-index:1000;background:#fff;
+          padding:6px 10px;border-radius:4px;font:14px sans-serif;box-shadow:0 1px 4px #0004}
+  /* NEW 1: size of the bin emoji on the map */
+  .bin-icon{font-size:28px;line-height:32px;text-align:center}
+</style></head>
+<body>
+<div id="map"></div><div id="status">Connecting to broker…</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script>
+const OBJECT_ID = "bin-rui-001";
+const TOPIC = `smartcity/objects/${OBJECT_ID}/location`;
+
+const map = L.map("map").setView([57.7089, 11.9746], 13);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+// NEW 2: a trash-bin icon instead of the default blue pin
+const binIcon = L.divIcon({
+  html: "🗑️",
+  className: "bin-icon",
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],    // centre of the icon sits on the coordinate
+  popupAnchor: [0, -16]    // popup opens just above the icon
+});
+
+let marker = null;
+const setStatus = t => document.getElementById("status").textContent = t;
+
+// Returns a clean object, or null if anything is wrong.
+function parse(text) {
+  let m;
+  try { m = JSON.parse(text); } catch { return null; }
+  if (!m || m.id !== OBJECT_ID) return null;
+  if (typeof m.name !== "string" || typeof m.type !== "string") return null;
+  const lat = m.latitude, lon = m.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;   // missing, string, NaN
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;         // out of range
+  if (lat === 0 && lon === 0) return null;                             // "null island"
+  return { id: m.id, name: m.name, type: m.type, lat, lon };
+}
+
+// Build the popup with textContent, not HTML: anyone can publish to a public broker.
+function popupFor(o) {
+  const div = document.createElement("div");
+  const b = document.createElement("b"); b.textContent = o.name;
+  div.append(b, document.createElement("br"),
+             `${o.type} · ${o.id}`, document.createElement("br"),
+             `${o.lat.toFixed(6)}, ${o.lon.toFixed(6)}`);
+  return div;
+}
+
+const client = mqtt.connect("wss://test.mosquitto.org:8081");
+client.on("connect", () => {
+  client.subscribe(TOPIC);
+  if (!marker) setStatus(`Waiting for location of ${OBJECT_ID}…`);
+});
+client.on("offline", () => setStatus("Broker offline — reconnecting…"));
+client.on("error",   e => setStatus("MQTT error: " + e.message));
+
+client.on("message", (_topic, payload) => {
+  const o = parse(payload.toString());
+  const time = new Date().toLocaleTimeString();
+  if (!o) {                       // invalid: do NOT move the marker
+    setStatus(`⚠ Invalid location received at ${time} — marker not moved`);
+    return;
+  }
+  // NEW 3: use the bin icon when the marker is first created
+  if (!marker) marker = L.marker([o.lat, o.lon], { icon: binIcon }).addTo(map);
+  else marker.setLatLng([o.lat, o.lon]);
+  marker.bindPopup(popupFor(o)).openPopup();
+  map.panTo([o.lat, o.lon]);
+  setStatus(`${o.name}: updated ${time}`);
+});
+</script>
+</body></html>
