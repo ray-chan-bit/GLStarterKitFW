@@ -14,6 +14,10 @@ extern "C" {
 #include "ethernet.hpp"
 #include "humidity_publisher.hpp"
 #include "leds_controller.hpp"
+
+#include "location_presets.hpp"
+#include "location_publisher.hpp"
+
 #include "mqtt_client.hpp"
 #include "mqtt_client_id.hpp"
 #include "settings.hpp"
@@ -33,6 +37,10 @@ network::MqttClient mqtt_client{Settings::mqtt_broker, mqtt_client_id.data()};
 network::TemperaturePublisher temperature_publisher{mqtt_client, device_id};
 network::HumidityPublisher humidity_publisher{mqtt_client, device_id};
 LedsController leds_controller{mqtt_client, device_id};
+
+network::LocationPublisher location_publisher{mqtt_client};
+LocationPresets location_presets{location_publisher};
+
 
 stm32f407::Dht11 climate_sensor;
 
@@ -61,8 +69,12 @@ int main()
         stm32f407::halt();
     }
 
-    if (!leds_controller.start() 
+     if (!leds_controller.start() 
         || !keyboard.add_listener(leds_controller)){
+        stm32f407::halt();
+    }
+
+    if (!keyboard.add_listener(location_presets)) {
         stm32f407::halt();
     }
     keyboard.start();
@@ -78,9 +90,13 @@ int main()
         || !mqtt_client.start() 
         || !ethernet.add_link_state_client(mqtt_client)
         || !temperature_publisher.start()
-        || !humidity_publisher.start()) {
+        || !humidity_publisher.start()
+        || !location_publisher.start()) {
         stm32f407::halt();
     }
+
+    // The bin reports its first preset as soon as the broker is reachable.
+    location_presets.publish_current();
 
     if (!climate_sensor.add_humidity_listener( humidity_publisher,Settings::humidity_reporting_threshold) 
         || !climate_sensor.add_temperature_listener(temperature_publisher, Settings::temperature_reporting_threshold)

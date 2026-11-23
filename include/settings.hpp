@@ -36,10 +36,10 @@ public:
     static constexpr const char* object_type = "waste_bin";
     static constexpr const char* object_name = "Rui Smart Bin 1";
 
-    // Test locations in Gothenburg; SW3 cycles through them.
+    // Test locations in Gothenburg; SW4 cycles through them.
     static constexpr std::array<Location, 3> preset_locations{{
         {57686900, 11942600},   // Slottsskogen
-        {57697177, 11979191},   // Götaplatsen (real waste basket from OSM)
+        {57697177, 11979191},   // Götaplatsen
         {57708900, 11973300},   // Central Station
     }};
 

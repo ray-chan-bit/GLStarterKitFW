@@ -54,7 +54,7 @@ private:
     void report_state_changes();
     bool read_button(Button button) const;
 
-    static constexpr std::size_t max_listeners = 2U;
+    static constexpr std::size_t max_listeners = 3U;
 
     static Keyboard* instance_;
 
