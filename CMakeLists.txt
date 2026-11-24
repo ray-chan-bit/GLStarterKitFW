@@ -31,6 +31,7 @@ add_executable(${PROJECT_NAME}
     src/mqtt_client.cpp
     src/mqtt_transport.cpp
     src/nmea_parser.cpp
+    src/nmea_tcp_receiver.cpp
     src/tcp_echo_server.cpp
     src/temperature_publisher.cpp
     src/ui.cpp

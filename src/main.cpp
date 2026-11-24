@@ -20,6 +20,9 @@ extern "C" {
 
 #include "mqtt_client.hpp"
 #include "mqtt_client_id.hpp"
+
+#include "nmea_tcp_receiver.hpp"
+
 #include "settings.hpp"
 #include "tcp_echo_server.hpp"
 #include "temperature_publisher.hpp"
@@ -40,7 +43,8 @@ LedsController leds_controller{mqtt_client, device_id};
 
 network::LocationPublisher location_publisher{mqtt_client};
 LocationPresets location_presets{location_publisher};
-
+network::NmeaTcpReceiver gps_receiver{location_publisher};
+network::NmeaTcpReceiver nmea_receiver{location_publisher};
 
 stm32f407::Dht11 climate_sensor;
 
@@ -82,7 +86,9 @@ int main()
     if (!ethernet.start() 
         || !echo_server.start() 
         || !ethernet.add_link_state_client(echo_server)
-        || !ethernet.add_link_state_client(user_interface)) {
+        || !ethernet.add_link_state_client(user_interface)
+        || !gps_receiver.start()
+        || !ethernet.add_link_state_client(gps_receiver)) {
         stm32f407::halt();
     }
 
