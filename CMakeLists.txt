@@ -25,8 +25,6 @@ add_executable(${PROJECT_NAME}
     src/ethernet.cpp
     src/humidity_publisher.cpp
     src/leds_controller.cpp
-    src/location_publisher.cpp
-    src/leds_controller.cpp
     src/location_presets.cpp
     src/location_publisher.cpp
     src/main.cpp
