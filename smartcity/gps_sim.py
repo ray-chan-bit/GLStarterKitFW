@@ -3,9 +3,11 @@
 like a GPS module would over UART.
 
 Usage:
-  python3 gps_sim.py                 # walk through the Gothenburg points
-  python3 gps_sim.py --no-fix        # send "no fix" (status V) sentences
-  python3 gps_sim.py --bad-checksum  # send sentences with a wrong checksum
+  python3 gps_sim.py                              # walk through the Gothenburg points
+  python3 gps_sim.py --point 57.7065,11.9364      # use your own point(s) instead
+  python3 gps_sim.py --point=-33.8568,151.2153    # negative values need "="
+  python3 gps_sim.py --no-fix                     # send "no fix" (status V) sentences
+  python3 gps_sim.py --bad-checksum               # send sentences with a wrong checksum
   python3 gps_sim.py --host 192.168.137.42 --port 5001 --interval 5
 """
 import argparse
@@ -52,6 +54,20 @@ def rmc_sentence(lat, lon, fix=True, bad_checksum=False):
     return f"${body}*{check}\r\n"
 
 
+def parse_point(text):
+    """Turns "57.7065,11.9364" into (57.7065, 11.9364), or rejects it with a clear message."""
+    parts = text.split(",")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"'{text}' is not LAT,LON (example: 57.7065,11.9364)")
+    try:
+        lat, lon = float(parts[0]), float(parts[1])
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{text}' must contain two numbers (example: 57.7065,11.9364)")
+    if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise argparse.ArgumentTypeError(f"'{text}' is out of range (latitude -90..90, longitude -180..180)")
+    return lat, lon
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -61,13 +77,19 @@ def main():
                         help="seconds at each point (one sentence per second)")
     parser.add_argument("--no-fix", action="store_true", help="send status V (no fix)")
     parser.add_argument("--bad-checksum", action="store_true", help="send wrong checksums")
+    parser.add_argument("--point", action="append", type=parse_point, metavar="LAT,LON",
+                        help="use this point instead of the built-in ones (repeatable); "
+                             "for negative latitudes write --point=-33.8568,151.2153")
     args = parser.parse_args()
+    points = POINTS
+    if args.point:
+        points = args.point
 
     print(f"Connecting to {args.host}:{args.port} ...")
     with socket.create_connection((args.host, args.port), timeout=5) as sock:
         print("Connected. Press Ctrl+C to stop.")
         while True:
-            for lat, lon in POINTS:
+            for lat, lon in points:
                 for _ in range(max(1, int(args.interval))):
                     line = rmc_sentence(lat, lon, fix=not args.no_fix,
                                         bad_checksum=args.bad_checksum)
@@ -81,3 +103,7 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nStopped.")
+    except OSError as error:
+        print(f"Network error: {error}")
+        print("Check that the board is on (LCD shows ETH on) and reachable: ping 192.168.137.42")
+        raise SystemExit(1)

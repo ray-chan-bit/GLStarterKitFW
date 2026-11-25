@@ -3,6 +3,9 @@
 Minimal CMake/FreeRTOS firmware for the STM32F407 Discovery board
 (STM32F407VGT6).
 
+> **Smart City extension:** a smart waste bin publishes its GPS location over MQTT
+> and is shown on OpenStreetMap. See [smartcity/README.md](smartcity/README.md).
+
 ## Prerequisites
 
 - CMake 3.24 or newer
