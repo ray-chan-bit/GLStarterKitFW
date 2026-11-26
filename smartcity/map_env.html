@@ -1,0 +1,114 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Smart City Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html,body,#map{height:100%;margin:0}
+  #status{position:absolute;top:10px;left:60px;z-index:1000;background:#fff;
+          padding:6px 10px;border-radius:4px;font:14px sans-serif;box-shadow:0 1px 4px #0004}
+  .bin-icon{font-size:28px;line-height:32px;text-align:center}
+</style></head>
+<body>
+<div id="map"></div><div id="status">Connecting to broker…</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script>
+const OBJECT_ID = "bin-rui-001";
+const TOPIC = `smartcity/objects/${OBJECT_ID}/location`;
+
+// The board's own sensor topics. The Device ID is printed by mosquitto_sub -t 'SBC/#' -v.
+const DEVICE_ID = "3034353034375105002F0038";
+const TEMPERATURE_TOPIC = `SBC/${DEVICE_ID}/temperature`;
+const HUMIDITY_TOPIC = `SBC/${DEVICE_ID}/humidity`;
+
+const map = L.map("map").setView([57.7089, 11.9746], 13);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+const binIcon = L.divIcon({
+  html: "🗑️",
+  className: "bin-icon",
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+  popupAnchor: [0, -16]
+});
+
+let marker = null;
+let lastObject = null;                                   // last valid location message
+const environment = { temperature: null, humidity: null, time: null };
+const setStatus = t => document.getElementById("status").textContent = t;
+
+// Returns a clean object, or null if anything is wrong.
+function parse(text) {
+  let m;
+  try { m = JSON.parse(text); } catch { return null; }
+  if (!m || m.id !== OBJECT_ID) return null;
+  if (typeof m.name !== "string" || typeof m.type !== "string") return null;
+  const lat = m.latitude, lon = m.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;   // missing, string, NaN
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;         // out of range
+  if (lat === 0 && lon === 0) return null;                             // "null island"
+  return { id: m.id, name: m.name, type: m.type, lat, lon };
+}
+
+// Sensor payloads are bare numbers, e.g. "25.0" and "26". Returns null if not plausible.
+function parseReading(text, min, max) {
+  if (!/^-?\d+(\.\d+)?$/.test(text.trim())) return null;
+  const value = Number(text);
+  return value >= min && value <= max ? value : null;
+}
+
+// Build the popup with textContent, not HTML: anyone can publish to a public broker.
+function popupFor(o) {
+  const div = document.createElement("div");
+  const b = document.createElement("b"); b.textContent = o.name;
+  const t = environment.temperature === null ? "—" : `${environment.temperature.toFixed(1)} °C`;
+  const h = environment.humidity === null ? "—" : `${environment.humidity} %`;
+  const since = environment.time ? ` (${environment.time})` : "";
+  div.append(b, document.createElement("br"),
+             `${o.type} · ${o.id}`, document.createElement("br"),
+             `${o.lat.toFixed(6)}, ${o.lon.toFixed(6)}`, document.createElement("br"),
+             `🌡 ${t} · 💧 ${h}${since}`);
+  return div;
+}
+
+function refreshPopup() {
+  if (marker && lastObject) marker.setPopupContent(popupFor(lastObject));
+}
+
+const client = mqtt.connect("wss://test.mosquitto.org:8081");
+client.on("connect", () => {
+  client.subscribe([TOPIC, TEMPERATURE_TOPIC, HUMIDITY_TOPIC]);
+  if (!marker) setStatus(`Waiting for location of ${OBJECT_ID}…`);
+});
+client.on("offline", () => setStatus("Broker offline — reconnecting…"));
+client.on("error",   e => setStatus("MQTT error: " + e.message));
+
+client.on("message", (topic, payload) => {
+  const text = payload.toString();
+  const time = new Date().toLocaleTimeString();
+
+  if (topic === TEMPERATURE_TOPIC || topic === HUMIDITY_TOPIC) {
+    const isTemperature = topic === TEMPERATURE_TOPIC;
+    const value = isTemperature ? parseReading(text, -40, 80) : parseReading(text, 0, 100);
+    if (value === null) return;          // ignore implausible readings, keep the last good one
+    environment[isTemperature ? "temperature" : "humidity"] = value;
+    environment.time = time;
+    refreshPopup();
+    return;
+  }
+
+  const o = parse(text);
+  if (!o) {                              // invalid: do NOT move the marker
+    setStatus(`⚠ Invalid location received at ${time} — marker not moved`);
+    return;
+  }
+  lastObject = o;
+  if (!marker) marker = L.marker([o.lat, o.lon], { icon: binIcon }).addTo(map);
+  else marker.setLatLng([o.lat, o.lon]);
+  marker.bindPopup(popupFor(o)).openPopup();
+  map.panTo([o.lat, o.lon]);
+  setStatus(`${o.name}: updated ${time}`);
+});
+</script>
+</body></html>
